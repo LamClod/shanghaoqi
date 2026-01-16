@@ -298,6 +298,9 @@ private:
     void handleNonStreamToStreamResponse(QSslSocket* clientSocket, QNetworkReply* reply);
     void forwardErrorResponse(QSslSocket* clientSocket, QNetworkReply* reply);
     QByteArray convertStreamToNonStream(const QByteArray& streamData);
+    QByteArray convertStreamToNonStreamSimple(const QByteArray& streamData);
+    void splitAndSendSimple(QSslSocket* socket, const QString& id,
+                           const QString& model, const QString& content);
     QByteArray normalizeNonStreamResponse(const QByteArray& responseData);
     
     // HTTP响应

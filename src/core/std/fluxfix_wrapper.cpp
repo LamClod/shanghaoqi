@@ -363,6 +363,42 @@ void SseHandler::reset()
 }
 
 // ============================================================================
+// Rectifier 实现
+// ============================================================================
+
+std::optional<RectifierTrigger> Rectifier::detect(std::string_view errorMsg)
+{
+    std::string msg(errorMsg);
+    int result = fluxfix_rectifier_detect(msg.c_str());
+    switch (result) {
+        case 0: return RectifierTrigger::InvalidSignature;
+        case 1: return RectifierTrigger::MissingThinkingPrefix;
+        case 2: return RectifierTrigger::InvalidRequest;
+        default: return std::nullopt;
+    }
+}
+
+std::string Rectifier::rectify(std::string_view jsonStr, RectifyResult* result)
+{
+    std::string input(jsonStr);
+    FFIRectifyResult ffiResult{};
+    char* output = fluxfix_rectifier_rectify(input.c_str(), &ffiResult);
+    if (!output) return {};
+
+    if (result) {
+        result->applied = ffiResult.applied != 0;
+        result->removedThinkingBlocks = ffiResult.removed_thinking_blocks;
+        result->removedRedactedThinkingBlocks = ffiResult.removed_redacted_thinking_blocks;
+        result->removedSignatureFields = ffiResult.removed_signature_fields;
+        result->removedThinkingField = ffiResult.removed_thinking_field != 0;
+    }
+
+    std::string ret(output);
+    fluxfix_string_free(output);
+    return ret;
+}
+
+// ============================================================================
 // 全局函数实现
 // ============================================================================
 

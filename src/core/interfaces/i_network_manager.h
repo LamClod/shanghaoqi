@@ -98,6 +98,7 @@ struct RuntimeOptions {
     bool disableSslStrict = false;
     bool enableHttp2 = true;
     bool enableConnectionPool = true;
+    bool enableFluxFix = true;    ///< 启用 FluxFix 整流器
     StreamMode upstreamStreamMode = StreamMode::FollowClient;
     StreamMode downstreamStreamMode = StreamMode::FollowClient;
     int proxyPort = 443;
@@ -105,12 +106,13 @@ struct RuntimeOptions {
     int requestTimeout = 120000;      ///< 请求超时（毫秒）
     int connectionTimeout = 30000;    ///< 连接超时（毫秒）
     int chunkSize = 20;               ///< 流式响应分块大小（字符数）
-    
+
     bool operator==(const RuntimeOptions& other) const {
         return debugMode == other.debugMode &&
                disableSslStrict == other.disableSslStrict &&
                enableHttp2 == other.enableHttp2 &&
                enableConnectionPool == other.enableConnectionPool &&
+               enableFluxFix == other.enableFluxFix &&
                upstreamStreamMode == other.upstreamStreamMode &&
                downstreamStreamMode == other.downstreamStreamMode &&
                proxyPort == other.proxyPort &&

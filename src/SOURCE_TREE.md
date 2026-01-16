@@ -190,6 +190,7 @@ proxy-qt/
 │   │   │       │   ├── disableSslStrict = false#   禁用 SSL 严格验证
 │   │   │       │   ├── enableHttp2 = true      #   启用 HTTP/2
 │   │   │       │   ├── enableConnectionPool = true
+│   │   │       │   ├── enableFluxFix = true    #   启用 FluxFix 整流器
 │   │   │       │   ├── upstreamStreamMode      #   上游流模式
 │   │   │       │   ├── downstreamStreamMode    #   下游流模式
 │   │   │       │   ├── proxyPort = 443         #   代理端口
@@ -220,14 +221,44 @@ proxy-qt/
 │   │   │
 │   │   ├── std/                                # ─────── 标准 C++ 实现 ───────
 │   │   │   └── fluxfix_wrapper.h/cpp           # FluxFix C FFI 封装
+│   │   │       ├── fluxfix::Response           #   统一响应结构
+│   │   │       │   ├── id                      #     响应 ID
+│   │   │       │   ├── model                   #     模型名称
+│   │   │       │   ├── content                 #     响应内容
+│   │   │       │   └── finishReason            #     结束原因
+│   │   │       │
 │   │   │       ├── fluxfix::Aggregator         #   流式 → 非流式聚合
 │   │   │       │   ├── addBytes(data, len)     #     添加 SSE 数据块
 │   │   │       │   ├── isComplete()            #     检查流是否完成
 │   │   │       │   └── finalize()              #     获取聚合后的响应
 │   │   │       │
-│   │   │       └── fluxfix::Splitter           #   非流式 → 流式拆分
-│   │   │           ├── setChunkSize(size)      #     设置分块大小
-│   │   │           └── split(id, model, content)#    拆分为 SSE 块数组
+│   │   │       ├── fluxfix::Splitter           #   非流式 → 流式拆分
+│   │   │       │   ├── setChunkSize(size)      #     设置分块大小
+│   │   │       │   └── split(id, model, content)#    拆分为 SSE 块数组
+│   │   │       │
+│   │   │       ├── fluxfix::SseHandler         #   SSE 流处理器
+│   │   │       │   ├── addEvent(eventData)     #     添加 SSE 事件
+│   │   │       │   ├── isComplete()            #     检查是否完成
+│   │   │       │   ├── finalize()              #     获取聚合结果
+│   │   │       │   └── reset()                 #     重置处理器状态
+│   │   │       │
+│   │   │       ├── fluxfix::RectifierTrigger   #   整流触发类型枚举
+│   │   │       │   ├── InvalidSignature        #     无效签名
+│   │   │       │   ├── MissingThinkingPrefix   #     缺少 thinking 前缀
+│   │   │       │   └── InvalidRequest          #     无效请求
+│   │   │       │
+│   │   │       ├── fluxfix::RectifyResult      #   整流结果结构
+│   │   │       │   ├── applied                 #     是否应用整流
+│   │   │       │   ├── removedThinkingBlocks   #     移除的 thinking 块数
+│   │   │       │   ├── removedRedactedThinkingBlocks
+│   │   │       │   ├── removedSignatureFields  #     移除的签名字段数
+│   │   │       │   └── removedThinkingField    #     是否移除 thinking 字段
+│   │   │       │
+│   │   │       ├── fluxfix::Rectifier          #   请求整流器
+│   │   │       │   ├── detect(errorMsg)        #     检测错误是否触发整流
+│   │   │       │   └── rectify(jsonStr)        #     整流 JSON 请求
+│   │   │       │
+│   │   │       └── fluxfix::version()          #   获取库版本
 │   │   │
 │   │   └── qt/                                 # ─────── Qt 框架实现 ───────
 │   │       │
@@ -291,6 +322,9 @@ proxy-qt/
 │   │       │       │   ├── handleNonStreamingResponse()   # 普通 JSON 响应
 │   │       │       │   ├── handleNonStreamToStreamResponse()# 非流式→流式转换
 │   │       │       │   ├── convertStreamToNonStream()     # 流式→非流式转换
+│   │       │       │   ├── convertStreamToNonStreamSimple()# 简化版流式→非流式
+│   │       │       │   ├── splitAndSendSimple()           # 简化版响应拆分发送
+│   │       │       │   ├── normalizeNonStreamResponse()   # 规范化非流式响应
 │   │       │       │   └── forwardErrorResponse()         # 错误响应转发
 │   │       │       │
 │   │       │       ├── HTTP 响应工具
@@ -360,6 +394,7 @@ proxy-qt/
 │       ├── runtime_options_panel.h/cpp         # 运行时选项面板
 │       │   ├── 代理端口 (QSpinBox)
 │       │   ├── 调试模式 (QCheckBox)
+│       │   ├── 启用 FluxFix 整流器 (QCheckBox)
 │       │   ├── 上游流模式 (QComboBox)
 │       │   ├── 下游流模式 (QComboBox)
 │       │   ├── 请求超时 (QSpinBox)

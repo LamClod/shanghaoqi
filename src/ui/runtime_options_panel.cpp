@@ -91,7 +91,13 @@ void RuntimeOptionsPanel::setupUi()
     m_disableSslStrictCheck = new QCheckBox(tr("关闭SSL严格模式"), this);
     m_disableSslStrictCheck->setToolTip(tr("不验证上游SSL证书"));
     basicLayout->addWidget(m_disableSslStrictCheck);
-    
+
+    // FluxFix 整流器复选框
+    m_enableFluxFixCheck = new QCheckBox(tr("启用FluxFix整流"), this);
+    m_enableFluxFixCheck->setChecked(true);  // 默认启用
+    m_enableFluxFixCheck->setToolTip(tr("完整的FluxFix整流器支持"));
+    basicLayout->addWidget(m_enableFluxFixCheck);
+
     mainLayout->addWidget(basicGroup);
     
     // ========== 网络选项分组 ==========
@@ -153,7 +159,9 @@ void RuntimeOptionsPanel::setupUi()
     // 将所有控件的值变化信号连接到 onOptionChanged 槽
     connect(m_debugModeCheck, &QCheckBox::stateChanged, 
             this, &RuntimeOptionsPanel::onOptionChanged);
-    connect(m_disableSslStrictCheck, &QCheckBox::stateChanged, 
+    connect(m_disableSslStrictCheck, &QCheckBox::stateChanged,
+            this, &RuntimeOptionsPanel::onOptionChanged);
+    connect(m_enableFluxFixCheck, &QCheckBox::stateChanged,
             this, &RuntimeOptionsPanel::onOptionChanged);
     connect(m_enableHttp2Check, &QCheckBox::stateChanged, 
             this, &RuntimeOptionsPanel::onOptionChanged);
@@ -189,6 +197,7 @@ RuntimeOptions RuntimeOptionsPanel::getOptions() const
     options.disableSslStrict = m_disableSslStrictCheck->isChecked();
     options.enableHttp2 = m_enableHttp2Check->isChecked();
     options.enableConnectionPool = m_enableConnectionPoolCheck->isChecked();
+    options.enableFluxFix = m_enableFluxFixCheck->isChecked();
     
     // 从数字输入框读取连接池大小
     options.connectionPoolSize = m_connectionPoolSizeSpin->value();
@@ -224,12 +233,14 @@ void RuntimeOptionsPanel::setOptions(const RuntimeOptions& options)
     const QSignalBlocker blocker5(m_connectionPoolSizeSpin);
     const QSignalBlocker blocker6(m_upstreamStreamCombo);
     const QSignalBlocker blocker7(m_downstreamStreamCombo);
-    
+    const QSignalBlocker blocker8(m_enableFluxFixCheck);
+
     // 设置复选框状态
     m_debugModeCheck->setChecked(options.debugMode);
     m_disableSslStrictCheck->setChecked(options.disableSslStrict);
     m_enableHttp2Check->setChecked(options.enableHttp2);
     m_enableConnectionPoolCheck->setChecked(options.enableConnectionPool);
+    m_enableFluxFixCheck->setChecked(options.enableFluxFix);
     
     // 设置连接池大小
     m_connectionPoolSizeSpin->setValue(options.connectionPoolSize);

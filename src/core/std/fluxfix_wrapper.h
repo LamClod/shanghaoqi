@@ -59,6 +59,7 @@
 #include <vector>
 #include <cstdint>
 #include <string_view>
+#include <optional>
 
 // FluxFix C FFI 头文件
 extern "C" {
@@ -330,6 +331,53 @@ public:
 private:
     std::unique_ptr<Aggregator> m_aggregator;  ///< 内部聚合器
     bool m_done = false;                        ///< [DONE] 标记状态
+};
+
+// ============================================================================
+// 请求整流器
+// ============================================================================
+
+/**
+ * @brief 整流触发类型
+ */
+enum class RectifierTrigger {
+    InvalidSignature = 0,
+    MissingThinkingPrefix = 1,
+    InvalidRequest = 2,
+};
+
+/**
+ * @brief 整流结果
+ */
+struct RectifyResult {
+    bool applied = false;
+    uint32_t removedThinkingBlocks = 0;
+    uint32_t removedRedactedThinkingBlocks = 0;
+    uint32_t removedSignatureFields = 0;
+    bool removedThinkingField = false;
+};
+
+/**
+ * @brief 请求整流器
+ *
+ * 处理 Anthropic API thinking 块兼容性问题。
+ */
+class Rectifier {
+public:
+    /**
+     * @brief 检测错误消息是否触发整流
+     * @param errorMsg 错误消息
+     * @return 触发类型，无触发返回 std::nullopt
+     */
+    [[nodiscard]] static std::optional<RectifierTrigger> detect(std::string_view errorMsg);
+
+    /**
+     * @brief 整流 JSON 请求
+     * @param jsonStr JSON 请求字符串
+     * @param result 整流结果 (可选)
+     * @return 整流后的 JSON 字符串，失败返回空字符串
+     */
+    [[nodiscard]] static std::string rectify(std::string_view jsonStr, RectifyResult* result = nullptr);
 };
 
 // ============================================================================

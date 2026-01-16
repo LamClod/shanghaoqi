@@ -724,11 +724,12 @@ void NetworkManager::forwardRequest(QSslSocket* clientSocket, const HttpRequest&
     
     if (upstreamStream) {
         if (downstreamStream) {
-            {
+            // 仅当启用 FluxFix 时创建 SSE 处理器
+            if (m_config.options.enableFluxFix) {
                 QMutexLocker locker(&m_mutex);
                 m_sseHandlers[reply] = std::make_unique<FluxFixSseHandler>();
             }
-            
+
             connect(reply, &QNetworkReply::readyRead, this, [this, clientSocket, reply]() {
                 handleStreamingResponse(clientSocket, reply);
             });
@@ -773,12 +774,6 @@ void NetworkManager::forwardRequest(QSslSocket* clientSocket, const HttpRequest&
                     m_sseBuffer[reply].append(remainingData);
                 }
                 
-                std::vector<char> flushData;
-                auto handlerIt = m_sseHandlers.find(reply);
-                if (handlerIt != m_sseHandlers.end() && handlerIt->second) {
-                    flushData = handlerIt->second->flush();
-                }
-                
                 QByteArray& buffer = m_sseBuffer[reply];
                 locker.unlock();
                 
@@ -786,15 +781,6 @@ void NetworkManager::forwardRequest(QSslSocket* clientSocket, const HttpRequest&
                     QString chunkSize = QString::number(buffer.size(), 16);
                     clientSocket->write(chunkSize.toUtf8() + "\r\n");
                     clientSocket->write(buffer);
-                    clientSocket->write("\r\n");
-                    clientSocket->flush();
-                }
-                
-                if (!flushData.empty()) {
-                    QByteArray flushBytes(flushData.data(), static_cast<int>(flushData.size()));
-                    QString chunkSize = QString::number(flushBytes.size(), 16);
-                    clientSocket->write(chunkSize.toUtf8() + "\r\n");
-                    clientSocket->write(flushBytes);
                     clientSocket->write("\r\n");
                     clientSocket->flush();
                 }
@@ -865,28 +851,26 @@ void NetworkManager::handleStreamingResponse(QSslSocket* clientSocket, QNetworkR
         locker.relock();
     }
     
-    // 获取 SSE 处理器
+    // 获取 SSE 处理器（仅当启用 FluxFix 时存在）
     auto handlerIt = m_sseHandlers.find(reply);
     FluxFixSseHandler* handler = (handlerIt != m_sseHandlers.end()) ? handlerIt->second.get() : nullptr;
-    if (!handler) {
-        locker.unlock();
-        return;
-    }
-    
+
     // 解析 SSE 事件并转发
     m_sseBuffer[reply].append(data);
     QByteArray& buffer = m_sseBuffer[reply];
-    
+
     while (true) {
         int eventEnd = buffer.indexOf("\n\n");
         if (eventEnd == -1) break;
-        
+
         QByteArray eventData = buffer.left(eventEnd + 2);
         buffer = buffer.mid(eventEnd + 2);
-        
-        // 添加到聚合器
-        handler->addEvent(eventData);
-        
+
+        // 仅当启用 FluxFix 时添加到聚合器
+        if (handler) {
+            handler->addEvent(eventData);
+        }
+
         // 转发原始事件
         locker.unlock();
         sendSseChunk(clientSocket, eventData);
@@ -965,18 +949,24 @@ void NetworkManager::handleNonStreamToStreamResponse(QSslSocket* clientSocket, Q
     headers["Transfer-Encoding"] = "chunked";
     
     sendHttpResponseHeaders(clientSocket, 200, "OK", headers);
-    
-    // 使用 FluxFixSplitter 拆分为流式数据块
-    FluxFixSplitter splitter;
-    size_t chunkSize = m_config.options.chunkSize > 0 ? m_config.options.chunkSize : 20;
-    splitter.setChunkSize(chunkSize);
-    
-    auto chunks = splitter.splitToByteArrays(id, model, content);
-    
-    for (const auto& chunk : chunks) {
-        sendSseChunk(clientSocket, chunk);
+
+    // 根据 FluxFix 开关选择拆分方式
+    if (m_config.options.enableFluxFix) {
+        // 使用 FluxFixSplitter 拆分为流式数据块
+        FluxFixSplitter splitter;
+        size_t chunkSize = m_config.options.chunkSize > 0 ? m_config.options.chunkSize : 20;
+        splitter.setChunkSize(chunkSize);
+
+        auto chunks = splitter.split(id, model, content);
+
+        for (const auto& chunk : chunks) {
+            sendSseChunk(clientSocket, chunk);
+        }
+    } else {
+        // 简单拆分：直接发送完整内容
+        splitAndSendSimple(clientSocket, id, model, content);
     }
-    
+
     clientSocket->write("0\r\n\r\n");
     clientSocket->flush();
 }
@@ -1018,14 +1008,20 @@ void NetworkManager::forwardErrorResponse(QSslSocket* clientSocket, QNetworkRepl
 
 /**
  * @brief 将流式响应转换为非流式响应
- * 
+ *
  * 使用 FluxFixAggregator 将 SSE 流数据聚合为完整的 JSON 响应。
- * 
+ * 当 FluxFix 禁用时，使用简单的 Qt 原生解析。
+ *
  * @param streamData 完整的 SSE 流数据
  * @return 合并后的 JSON 响应
  */
 QByteArray NetworkManager::convertStreamToNonStream(const QByteArray& streamData)
 {
+    // 当 FluxFix 禁用时，使用简单的 Qt 原生解析
+    if (!m_config.options.enableFluxFix) {
+        return convertStreamToNonStreamSimple(streamData);
+    }
+
     FluxFixAggregator aggregator;
     aggregator.addBytes(streamData);
     
@@ -1059,6 +1055,124 @@ QByteArray NetworkManager::convertStreamToNonStream(const QByteArray& streamData
     }});
     
     return QJsonDocument(obj).toJson(QJsonDocument::Compact);
+}
+
+/**
+ * @brief 简单版本的流式转非流式（不使用 FluxFix）
+ *
+ * 使用 Qt 原生 JSON 解析聚合 SSE 流数据。
+ *
+ * @param streamData 完整的 SSE 流数据
+ * @return 合并后的 JSON 响应
+ */
+QByteArray NetworkManager::convertStreamToNonStreamSimple(const QByteArray& streamData)
+{
+    QString id = "chatcmpl-converted";
+    QString model = "unknown";
+    QString role = "assistant";
+    QString content;
+    QString finishReason;
+
+    // 解析 SSE 事件
+    QList<QByteArray> lines = streamData.split('\n');
+    for (const QByteArray& line : lines) {
+        if (!line.startsWith("data: ")) continue;
+        QByteArray jsonData = line.mid(6).trimmed();
+        if (jsonData == "[DONE]") break;
+
+        QJsonParseError parseError;
+        QJsonDocument doc = QJsonDocument::fromJson(jsonData, &parseError);
+        if (parseError.error != QJsonParseError::NoError) continue;
+
+        QJsonObject obj = doc.object();
+        if (obj.contains("id")) id = obj["id"].toString();
+        if (obj.contains("model")) model = obj["model"].toString();
+
+        QJsonArray choices = obj["choices"].toArray();
+        if (!choices.isEmpty()) {
+            QJsonObject choice = choices[0].toObject();
+            QJsonObject delta = choice["delta"].toObject();
+            if (delta.contains("role")) role = delta["role"].toString();
+            if (delta.contains("content")) content += delta["content"].toString();
+            if (choice.contains("finish_reason") && !choice["finish_reason"].isNull()) {
+                finishReason = choice["finish_reason"].toString();
+            }
+        }
+    }
+
+    // 构建非流式响应
+    QJsonObject result;
+    result["id"] = id;
+    result["object"] = "chat.completion";
+    result["model"] = model;
+    result["choices"] = QJsonArray({QJsonObject{
+        {"index", 0},
+        {"message", QJsonObject{{"role", role}, {"content", content}}},
+        {"finish_reason", finishReason.isEmpty() ? "stop" : finishReason}
+    }});
+
+    return QJsonDocument(result).toJson(QJsonDocument::Compact);
+}
+
+/**
+ * @brief 简单版本的非流转流拆分（不使用 FluxFix）
+ *
+ * 使用 Qt 原生方式将完整响应拆分为 SSE 事件流。
+ *
+ * @param socket 客户端套接字
+ * @param id 响应 ID
+ * @param model 模型名称
+ * @param content 完整内容
+ */
+void NetworkManager::splitAndSendSimple(QSslSocket* socket, const QString& id,
+                                        const QString& model, const QString& content)
+{
+    size_t chunkSize = m_config.options.chunkSize > 0 ? m_config.options.chunkSize : 20;
+
+    // 发送角色 delta
+    QJsonObject roleChunk;
+    roleChunk["id"] = id;
+    roleChunk["object"] = "chat.completion.chunk";
+    roleChunk["model"] = model;
+    roleChunk["choices"] = QJsonArray({QJsonObject{
+        {"index", 0},
+        {"delta", QJsonObject{{"role", "assistant"}}},
+        {"finish_reason", QJsonValue()}
+    }});
+    QByteArray roleData = "data: " + QJsonDocument(roleChunk).toJson(QJsonDocument::Compact) + "\n\n";
+    sendSseChunk(socket, roleData);
+
+    // 按 chunkSize 拆分内容
+    for (qsizetype i = 0; i < content.length(); i += static_cast<qsizetype>(chunkSize)) {
+        QString part = content.mid(i, static_cast<qsizetype>(chunkSize));
+        QJsonObject chunk;
+        chunk["id"] = id;
+        chunk["object"] = "chat.completion.chunk";
+        chunk["model"] = model;
+        chunk["choices"] = QJsonArray({QJsonObject{
+            {"index", 0},
+            {"delta", QJsonObject{{"content", part}}},
+            {"finish_reason", QJsonValue()}
+        }});
+        QByteArray data = "data: " + QJsonDocument(chunk).toJson(QJsonDocument::Compact) + "\n\n";
+        sendSseChunk(socket, data);
+    }
+
+    // 发送结束 delta
+    QJsonObject endChunk;
+    endChunk["id"] = id;
+    endChunk["object"] = "chat.completion.chunk";
+    endChunk["model"] = model;
+    endChunk["choices"] = QJsonArray({QJsonObject{
+        {"index", 0},
+        {"delta", QJsonObject{}},
+        {"finish_reason", "stop"}
+    }});
+    QByteArray endData = "data: " + QJsonDocument(endChunk).toJson(QJsonDocument::Compact) + "\n\n";
+    sendSseChunk(socket, endData);
+
+    // 发送 [DONE]
+    sendSseChunk(socket, QByteArray("data: [DONE]\n\n"));
 }
 
 /**

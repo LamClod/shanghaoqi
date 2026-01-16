@@ -137,11 +137,12 @@ private:
     void setupUi();
     
     // ========== UI组件 ==========
-    
+
     QCheckBox* m_debugModeCheck;           ///< 调试模式复选框
     QCheckBox* m_disableSslStrictCheck;    ///< 禁用SSL严格验证复选框
     QCheckBox* m_enableHttp2Check;         ///< 启用HTTP/2复选框
     QCheckBox* m_enableConnectionPoolCheck; ///< 启用连接池复选框
+    QCheckBox* m_enableFluxFixCheck;       ///< 启用FluxFix整流器复选框
     QComboBox* m_upstreamStreamCombo;      ///< 上游流模式下拉框
     QComboBox* m_downstreamStreamCombo;    ///< 下游流模式下拉框
     QSpinBox* m_connectionPoolSizeSpin;    ///< 连接池大小输入框
