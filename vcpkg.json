@@ -1,0 +1,12 @@
+{
+  "name": "shanghaoqi",
+  "version": "1.0.0",
+  "description": "上号器 v1.0.0 — 本地 HTTPS 语义代理",
+  "dependencies": [
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": ["widgets", "network", "concurrent", "testlib"]
+    }
+  ]
+}

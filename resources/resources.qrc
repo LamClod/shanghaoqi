@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/resources">
+        <file>generate_icon.py</file>
+        <file>shanghaoqi_icon.ico</file>
+        <file>shanghaoqi_icon_16x16.png</file>
+        <file>shanghaoqi_icon_32x32.png</file>
+        <file>shanghaoqi_icon_48x48.png</file>
+        <file>shanghaoqi_icon_64x64.png</file>
+        <file>shanghaoqi_icon_128x128.png</file>
+        <file>shanghaoqi_icon_256x256.png</file>
+        <file>shanghaoqi_icon_512x512.png</file>
+        <file>shanghaoqi_icon_1024x1024.png</file>
+        <file>trae_solo_system_prompt.md</file>
+    </qresource>
+</RCC>
